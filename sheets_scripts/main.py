@@ -17,17 +17,16 @@ def add_candidate_data_to_sheets(creds, candidate_name, candidate_email, positio
             ],
         ]
         body = {"values": values}
-        result = ((service.spreadsheets()
-        .values()
-        .append(
-            spreadsheetId=spreadsheet_id,
-            range=range_name,
-            valueInputOption="USER_ENTERED",
-            body=body,
-        )
-         )
-         .execute())
-        print(result)
+        ((service.spreadsheets()
+            .values()
+            .append(
+                spreadsheetId=spreadsheet_id,
+                range=range_name,
+                valueInputOption="USER_ENTERED",
+                body=body,
+            )
+        ).execute())
+
     except HttpError as error:
         print(f"An error occurred: {error}")
         print(error)

@@ -6,6 +6,8 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 
+from sheets_scripts.main import add_candidate_data_to_sheets
+
 candidate_name: str
 candidate_email: str
 position: str
@@ -20,23 +22,23 @@ def get_top_5_messages(creds):
             userId="me",
             includeSpamTrash=False,
             labelIds=["IMPORTANT"],
-            maxResults=1
+            maxResults=4
         ).execute()
         messages = results.get("messages")
         for message in messages:
             email_regex = r'<([^>]+)>'
 
             message_result = service.users().messages().get(
-              userId="me",
-              id=message.get("id"),
-              format="full"
+                userId="me",
+                id=message.get("id"),
+                format="full"
             ).execute()
 
             name_and_email = message_result.get('payload').get('headers')[16].get('value').split(" ")
 
             # values to be returned
             candidate_name = name_and_email[0] + name_and_email[1]
-            candidate_email = re.search(email_regex, name_and_email[2]).group(1)
+            candidate_email = re.search(email_regex, name_and_email[-1]).group(1)
             position = message_result.get('payload').get('headers')[19].get('value')
 
             message_attachment_result = service.users().messages().attachments().get(
@@ -45,17 +47,16 @@ def get_top_5_messages(creds):
                 id=message_result.get('payload').get('parts')[1].get('body').get('attachmentId')
             ).execute()
 
-            # print(message_attachment_result)
-
             with open(f"../resume/{candidate_name}.pdf", "wb") as f:
                 f.write(base64.urlsafe_b64decode(message_attachment_result.get('data').encode('utf-8')))
                 f.close()
 
             # TODO: The file should be uploaded to the google drive and the url should be returned
-            candidate_resume_link = upload_resume_to_drive(creds=creds,
-                                   candidate_file_name=f"{candidate_name}",
-                                   file_name=f"../resume/{candidate_name}.pdf"
-                                   )
+            candidate_resume_link = upload_resume_to_drive(
+                creds=creds,
+                candidate_file_name=f"{candidate_name}",
+                file_name=f"../resume/{candidate_name}.pdf"
+            )
 
             if os.path.exists(f"../resume/{candidate_name}.pdf"):
                 os.remove(f"../resume/{candidate_name}.pdf")
@@ -63,15 +64,28 @@ def get_top_5_messages(creds):
             else:
                 print("File illa")
 
+            print("Adding data to sheets...")
+            add_candidate_data_to_sheets(
+                creds,
+                candidate_name,
+                candidate_email,
+                position,
+                candidate_resume_link
+            )
+            print("Added data to sheets")
+            print("Modifying the labels")
+            service.users().messages().modify(
+                userId='me',
+                id=message_result.get('id'),
+                body={
+                    'addLabelIds': ["Scanned"],
+                    'removeLabelIds': message.get('labelIds')
+                }
+            )
+            print("Labels updated")
+
     except HttpError as e:
         print("Error", e)
-
-
-    return (candidate_name,
-            candidate_email,
-            position,
-            candidate_resume_link
-            )
 
 
 def upload_resume_to_drive(creds, candidate_file_name, file_name):
