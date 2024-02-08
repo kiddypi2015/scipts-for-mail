@@ -14,6 +14,19 @@ position: str
 candidate_resume_link: str
 
 
+def get_labels(creds):
+    service = build('gmail', 'v1', credentials=creds)
+
+    # List all labels
+    labels = service.users().labels().list(userId='me').execute()
+
+    # Extract label names and IDs
+    for label in labels['labels']:
+        print(f"Label Name: {label['name']}")
+        print(f"Label ID: {label['id']}")
+        print('-' * 20)
+
+
 def get_top_5_messages(creds):
     global candidate_name, candidate_email, position, candidate_resume_link
     try:
@@ -37,7 +50,7 @@ def get_top_5_messages(creds):
             name_and_email = message_result.get('payload').get('headers')[16].get('value').split(" ")
 
             # values to be returned
-            candidate_name = name_and_email[0] + name_and_email[1]
+            candidate_name = name_and_email[0] + " " + name_and_email[1]
             candidate_email = re.search(email_regex, name_and_email[-1]).group(1)
             position = message_result.get('payload').get('headers')[19].get('value')
 
@@ -51,7 +64,6 @@ def get_top_5_messages(creds):
                 f.write(base64.urlsafe_b64decode(message_attachment_result.get('data').encode('utf-8')))
                 f.close()
 
-            # TODO: The file should be uploaded to the google drive and the url should be returned
             candidate_resume_link = upload_resume_to_drive(
                 creds=creds,
                 candidate_file_name=f"{candidate_name}",
@@ -62,7 +74,7 @@ def get_top_5_messages(creds):
                 os.remove(f"../resume/{candidate_name}.pdf")
                 print("File deleted!")
             else:
-                print("File illa")
+                print("File not found")
 
             print("Adding data to sheets...")
             add_candidate_data_to_sheets(
@@ -72,17 +84,17 @@ def get_top_5_messages(creds):
                 position,
                 candidate_resume_link
             )
-            print("Added data to sheets")
-            print("Modifying the labels")
+            print("Added data to sheets.")
+            print("Modifying the labels...")
             service.users().messages().modify(
                 userId='me',
                 id=message_result.get('id'),
                 body={
-                    'addLabelIds': ["Scanned"],
+                    'addLabelIds': ["Label_5074791744678395025"],
                     'removeLabelIds': message.get('labelIds')
                 }
-            )
-            print("Labels updated")
+            ).execute()
+            print("Labels updated.")
 
     except HttpError as e:
         print("Error", e)
