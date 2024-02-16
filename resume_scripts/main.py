@@ -7,11 +7,13 @@ from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 
 from sheets_scripts.main import add_candidate_data_to_sheets
+from phone_number_scripts.main import extract_phone_numbers_from_pdf
 
 candidate_name: str
 candidate_email: str
 position: str
 candidate_resume_link: str
+candidate_phone_number: str
 
 
 def get_labels(creds):
@@ -28,74 +30,78 @@ def get_labels(creds):
 
 
 def get_top_5_messages(creds):
-    global candidate_name, candidate_email, position, candidate_resume_link
+    global candidate_name, candidate_email, position, candidate_resume_link, candidate_phone_number
     try:
         service = build("gmail", "v1", credentials=creds)
         results = service.users().messages().list(
             userId="me",
             includeSpamTrash=False,
             labelIds=["IMPORTANT"],
-            maxResults=4
+            maxResults=1
         ).execute()
         messages = results.get("messages")
-        for message in messages:
-            email_regex = r'<([^>]+)>'
+        if len(messages) >= 1:
+            for message in messages:
+                email_regex = r'<([^>]+)>'
 
-            message_result = service.users().messages().get(
-                userId="me",
-                id=message.get("id"),
-                format="full"
-            ).execute()
+                message_result = service.users().messages().get(
+                    userId="me",
+                    id=message.get("id"),
+                    format="full"
+                ).execute()
 
-            name_and_email = message_result.get('payload').get('headers')[16].get('value').split(" ")
+                name_and_email = message_result.get('payload').get('headers')[16].get('value').split(" ")
 
-            # values to be returned
-            candidate_name = name_and_email[0] + " " + name_and_email[1]
-            candidate_email = re.search(email_regex, name_and_email[-1]).group(1)
-            position = message_result.get('payload').get('headers')[19].get('value')
+                # values to be returned
+                candidate_name = name_and_email[0] + " " + name_and_email[1]
+                candidate_email = re.search(email_regex, name_and_email[-1]).group(1)
+                position = message_result.get('payload').get('headers')[19].get('value')
 
-            message_attachment_result = service.users().messages().attachments().get(
-                userId='me',
-                messageId=message_result.get('id'),
-                id=message_result.get('payload').get('parts')[1].get('body').get('attachmentId')
-            ).execute()
+                message_attachment_result = service.users().messages().attachments().get(
+                    userId='me',
+                    messageId=message_result.get('id'),
+                    id=message_result.get('payload').get('parts')[1].get('body').get('attachmentId')
+                ).execute()
 
-            with open(f"../resume/{candidate_name}.pdf", "wb") as f:
-                f.write(base64.urlsafe_b64decode(message_attachment_result.get('data').encode('utf-8')))
-                f.close()
+                with open(f"../resume/{candidate_name}.pdf", "wb") as f:
+                    f.write(base64.urlsafe_b64decode(message_attachment_result.get('data').encode('utf-8')))
+                    candidate_phone_number = extract_phone_numbers_from_pdf(f"../resume/{candidate_name}.pdf")
+                    f.close()
 
-            candidate_resume_link = upload_resume_to_drive(
-                creds=creds,
-                candidate_file_name=f"{candidate_name}",
-                file_name=f"../resume/{candidate_name}.pdf"
-            )
+                candidate_resume_link = upload_resume_to_drive(
+                    creds=creds,
+                    candidate_file_name=f"{candidate_name}",
+                    file_name=f"../resume/{candidate_name}.pdf"
+                )
 
-            if os.path.exists(f"../resume/{candidate_name}.pdf"):
-                os.remove(f"../resume/{candidate_name}.pdf")
-                print("File deleted!")
-            else:
-                print("File not found")
+                if os.path.exists(f"../resume/{candidate_name}.pdf"):
+                    os.remove(f"../resume/{candidate_name}.pdf")
+                    print("File deleted!")
+                else:
+                    print("File not found")
 
-            print("Adding data to sheets...")
-            add_candidate_data_to_sheets(
-                creds,
-                candidate_name,
-                candidate_email,
-                position,
-                candidate_resume_link
-            )
-            print("Added data to sheets.")
-            print("Modifying the labels...")
-            service.users().messages().modify(
-                userId='me',
-                id=message_result.get('id'),
-                body={
-                    'addLabelIds': ["Label_5074791744678395025"],
-                    'removeLabelIds': message.get('labelIds')
-                }
-            ).execute()
-            print("Labels updated.")
-
+                print("Adding data to sheets...")
+                add_candidate_data_to_sheets(
+                    creds,
+                    candidate_name,
+                    candidate_email,
+                    position,
+                    candidate_resume_link,
+                    candidate_phone_number
+                )
+                print("Added data to sheets.")
+                print("Modifying the labels...")
+                service.users().messages().modify(
+                    userId='me',
+                    id=message_result.get('id'),
+                    body={
+                        'addLabelIds': ["Label_5074791744678395025"],
+                        'removeLabelIds': message.get('labelIds')
+                    }
+                ).execute()
+                print("Labels updated.")
+        else:
+            print("Waiting for more 300 seconds for enough length")
     except HttpError as e:
         print("Error", e)
 

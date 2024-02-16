@@ -8,7 +8,8 @@ def main():
     creds = get_creds()
     while True:
         get_top_5_messages(creds=creds)
-        sleep(300)
+        # sleep(300)
+        break
 
 
 if __name__ == "__main__":
